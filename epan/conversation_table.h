@@ -131,9 +131,26 @@ typedef void (*endpoint_gui_init_cb)(struct register_ct* ct, const char *filter)
  */
 typedef struct register_ct register_ct_t;
 
-/** Conversation extension for TCP */
+/** Conversation extension for TCP
+ *  Extended to keep simple aggregated TCP statistics that the conversation
+ *  table / tap can display. Keep this structure compact and use types
+ *  consistent with existing code (nstime_t for timestamps).
+ */
 typedef struct _conversation_extension_tcp_t {
-    uint64_t            flows;          /**< number of flows */
+    uint64_t            flows;            /**< number of flows */
+
+    /* RTT aggregation: store sum and count so average RTT can be computed */
+    nstime_t            rtt_sum;          /**< sum of RTT samples (nstime_t) */
+    uint64_t            rtt_count;        /**< number of RTT samples */
+    nstime_t            rtt_median;       /**< median of RTT samples (nstime_t) */
+
+    /* Simple counters for events */
+    uint64_t            retransmissions;  /**< number of retransmissions observed */
+    uint64_t            out_of_order;     /**< number of out-of-order packets observed */
+
+    /* Loss tracking: store total losses and optional duration for rate calculation */
+    uint64_t            losses_total;     /**< total lost packets observed */
+    nstime_t            stats_duration;   /**< accumulated time span for rate calculations */
 } conv_extension_tcp_t;
 
 /** Conversation list information */

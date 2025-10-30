@@ -679,6 +679,8 @@ QVariant ConversationDataModel::headerData(int section, Qt::Orientation orientat
             switch (section) {
             case CONV_TCP_EXT_COLUMN_A:
                 return tr("Flows"); break;
+            case CONV_TCP_EXT_COLUMN_RTT:
+                return tr("Avg RTT (ms)"); break;
             }
         }
     } else if (role == Qt::TextAlignmentRole) {
@@ -852,11 +854,42 @@ QVariant ConversationDataModel::data(const QModelIndex &idx, int role) const
                 qlonglong flows = (qlonglong)conv_item->ext_tcp.flows;
                 return role == Qt::DisplayRole ? QStringLiteral("%L1").arg(flows) : (QVariant)flows; break;
                 }
+            case CONV_TCP_EXT_COLUMN_RTT:
+                {
+                if (conv_item->ext_tcp.rtt_count > 0) {
+                    double median_sec = nstime_to_sec(&conv_item->ext_tcp.rtt_median);
+                    double median_ms = median_sec * 1000.0;
+                    if (role == Qt::DisplayRole) {
+                        QString s = QString::number(median_ms, 'f', 3) + " ms (" + QString::number((quint64)conv_item->ext_tcp.rtt_count) + ")";
+                        return s;
+                    } else {
+                        /* UNFORMATTED_DISPLAYDATA: return numeric milliseconds */
+                        return QVariant(median_ms);
+                    }
+                } else {
+                    if (role == Qt::DisplayRole)
+                        return QString();
+                    else
+                        return QVariant();
+                }
+                break;
+                }
             }
         }
     } else if (role == Qt::ToolTipRole) {
         if (idx.column() == CONV_COLUMN_START || idx.column() == CONV_COLUMN_DURATION)
             return QObject::tr("Bars show the relative timeline for each conversation.");
+        if (tap() == "tcp" && idx.column() == CONV_TCP_EXT_COLUMN_RTT) {
+            if (conv_item->ext_tcp.rtt_count > 0) {
+                double avg_sec = nstime_to_sec(&conv_item->ext_tcp.rtt_sum) / (double)conv_item->ext_tcp.rtt_count;
+                double avg_ms = avg_sec * 1000.0;
+                double median_ms = nstime_to_sec(&conv_item->ext_tcp.rtt_median) * 1000.0;
+                return QString::fromLatin1("Avg: %1 ms\nMedian: %2 ms\nSamples: %3")
+                    .arg(QString::number(avg_ms, 'f', 3))
+                    .arg(QString::number(median_ms, 'f', 3))
+                    .arg((quint64)conv_item->ext_tcp.rtt_count);
+            }
+        }
     } else if (role == Qt::TextAlignmentRole) {
         if (idx.column() == CONV_COLUMN_SRC_ADDR || idx.column() == CONV_COLUMN_DST_ADDR)
             return Qt::AlignLeft;

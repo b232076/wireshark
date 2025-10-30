@@ -58,6 +58,7 @@ wireshark-tap-register.c
 # CMake #
 ##################
 /*build*/
+build/
 CMakeCache.txt
 CMakeFiles
 CMakeUserPresets.json

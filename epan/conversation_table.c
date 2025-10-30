@@ -20,6 +20,58 @@
 #include "address_types.h"
 
 #include "stat_tap_ui.h"
+/* for access to tcp analysis structures and flags (proof-of-concept) */
+#include <epan/dissectors/packet-tcp.h>
+
+/* Some TCP analysis flags (TCP_A_*) are defined in packet-tcp.c; define
+ * the ones we need here as a fallback so this file can compile without
+ * pulling internal C symbols. These values mirror the ones in
+ * packet-tcp.c and are safe to define if not already present.
+ */
+#ifndef TCP_A_RETRANSMISSION
+#define TCP_A_RETRANSMISSION          0x0001
+#endif
+#ifndef TCP_A_OUT_OF_ORDER
+#define TCP_A_OUT_OF_ORDER            0x0200
+#endif
+
+/* Helper for counting tcp_acked flags in a tcp_analysis->acked_table and
+ * aggregating RTT samples.
+ */
+struct _tcp_acked_counters {
+    uint64_t retrans;
+    uint64_t ooo;
+    GArray *samples;       /* array of nstime_t samples */
+    nstime_t rtt_median;   /* median sample */
+};
+
+static gint
+cmp_nstime(const void *a, const void *b)
+{
+    const nstime_t *na = (const nstime_t *)a;
+    const nstime_t *nb = (const nstime_t *)b;
+    if (na->secs < nb->secs) return -1;
+    if (na->secs > nb->secs) return 1;
+    if (na->nsecs < nb->nsecs) return -1;
+    if (na->nsecs > nb->nsecs) return 1;
+    return 0;
+}
+
+static bool
+count_tcp_acked_flags_cb(const void *key, void *value, void *userdata)
+{
+    (void)key;
+    struct tcp_acked *ta = (struct tcp_acked *)value;
+    struct _tcp_acked_counters *c = (struct _tcp_acked_counters *)userdata;
+    if (!ta || !c) return false;
+    if (ta->flags & TCP_A_RETRANSMISSION) c->retrans++;
+    if (ta->flags & TCP_A_OUT_OF_ORDER) c->ooo++;
+    /* collect RTT sample if present */
+    if (ta->ts.secs || ta->ts.nsecs) {
+        g_array_append_val(c->samples, ta->ts);
+    }
+    return false; /* continue traversal */
+}
 
 struct register_ct {
     bool hide_ports;       /* hide TCP / UDP port columns */
@@ -840,6 +892,97 @@ add_conversation_table_data_extended(
     if(ct != NULL) {
         // invoke the proto callback function which knows how to fill the column(s)
         ext_tcp.flows = proto_conv_cb(ct);
+        /* Proof-of-concept: try to copy some TCP analysis statistics from the
+         * tcp_analysis attached to the conversation (if present). We iterate
+         * the tcpd->acked_table to count retransmissions and out-of-order
+         * markings and copy an initial RTT sample (if available).
+         */
+        {
+            struct tcp_analysis *tcpd = get_tcp_conversation_data_idempotent(ct);
+            if (tcpd) {
+                /* Prefer aggregating RTT samples from the acked_table (these are
+                 * per-ack RTT samples stored in struct tcp_acked::ts). If no
+                 * samples exist there, fall back to ts_first_rtt (initial RTT).
+                 */
+                ext_tcp.retransmissions = 0;
+                ext_tcp.out_of_order = 0;
+                ext_tcp.rtt_sum.secs = 0; ext_tcp.rtt_sum.nsecs = 0;
+                ext_tcp.rtt_count = 0;
+
+                if (tcpd->acked_table) {
+                    struct _tcp_acked_counters counters;
+                    memset(&counters, 0, sizeof(counters));
+                    /* initialize samples array */
+                    counters.samples = g_array_new(FALSE, FALSE, sizeof(nstime_t));
+                    wmem_tree_foreach(tcpd->acked_table, count_tcp_acked_flags_cb, &counters);
+                    ext_tcp.retransmissions = counters.retrans;
+                    ext_tcp.out_of_order = counters.ooo;
+                    if (counters.samples->len > 0) {
+                        /* compute sum and count from samples */
+                        nstime_t sum = {0,0};
+                        for (guint i = 0; i < counters.samples->len; i++) {
+                            nstime_t *s = &g_array_index(counters.samples, nstime_t, i);
+                            if (sum.secs == 0 && sum.nsecs == 0) {
+                                memcpy(&sum, s, sizeof(sum));
+                            } else {
+                                nstime_add(&sum, s);
+                            }
+                        }
+                        ext_tcp.rtt_count = counters.samples->len;
+                        memcpy(&ext_tcp.rtt_sum, &sum, sizeof(ext_tcp.rtt_sum));
+
+                        /* compute median */
+                        g_array_sort(counters.samples, cmp_nstime);
+                        guint mid = counters.samples->len / 2;
+                        if ((counters.samples->len % 2) == 1) {
+                            /* odd: pick middle */
+                            nstime_t *m = &g_array_index(counters.samples, nstime_t, mid);
+                            memcpy(&ext_tcp.rtt_median, m, sizeof(ext_tcp.rtt_median));
+                        } else {
+                            /* even: average two middle values */
+                            nstime_t *m1 = &g_array_index(counters.samples, nstime_t, mid - 1);
+                            nstime_t *m2 = &g_array_index(counters.samples, nstime_t, mid);
+                            /* median = (m1 + m2) / 2 */
+                            nstime_t tmp = *m1;
+                            nstime_add(&tmp, m2);
+                            /* divide by 2: convert to nanoseconds, divide, convert back */
+                            {
+                                gint64 ns = (gint64)tmp.secs * 1000000000LL + (gint64)tmp.nsecs;
+                                ns /= 2;
+                                ext_tcp.rtt_median.secs = (guint32)(ns / 1000000000LL);
+                                ext_tcp.rtt_median.nsecs = (guint32)(ns % 1000000000LL);
+                            }
+                        }
+                    }
+                    g_array_free(counters.samples, TRUE);
+                }
+
+                /* Fallback to ts_first_rtt if no acked_table RTT samples were
+                 * found.
+                 */
+                if (ext_tcp.rtt_count == 0) {
+                    if ((tcpd->ts_first_rtt.secs != 0) || (tcpd->ts_first_rtt.nsecs != 0)) {
+                        memcpy(&ext_tcp.rtt_sum, &tcpd->ts_first_rtt, sizeof(ext_tcp.rtt_sum));
+                        ext_tcp.rtt_count = 1;
+                    }
+                }
+
+                /* compute duration from current conv_item times if available */
+                nstime_t dur = {0,0};
+                if (conv_item) {
+                    nstime_delta(&dur, &conv_item->stop_time, &conv_item->start_time);
+                }
+                memcpy(&ext_tcp.stats_duration, &dur, sizeof(ext_tcp.stats_duration));
+            } else {
+                /* no tcp analysis attached */
+                ext_tcp.rtt_sum.secs = 0; ext_tcp.rtt_sum.nsecs = 0;
+                ext_tcp.rtt_count = 0;
+                ext_tcp.retransmissions = 0;
+                ext_tcp.out_of_order = 0;
+                ext_tcp.losses_total = 0;
+                ext_tcp.stats_duration.secs = 0; ext_tcp.stats_duration.nsecs = 0;
+            }
+        }
     }
     else {
         ext_tcp.flows = 0;

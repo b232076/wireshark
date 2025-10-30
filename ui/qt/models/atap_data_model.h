@@ -327,6 +327,7 @@ public:
 
     typedef enum {
         CONV_TCP_EXT_COLUMN_A = CONV_INDEX_COLUMN,
+        CONV_TCP_EXT_COLUMN_RTT, /* Avg RTT (ms) */
         CONV_TCP_EXT_NUM_COLUMNS,
         CONV_TCP_EXT_INDEX_COLUMN = CONV_TCP_EXT_NUM_COLUMNS
     } conversation_tcp_ext_column_type_e;
