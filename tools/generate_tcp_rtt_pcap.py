@@ -18,6 +18,11 @@ out_dir = os.path.join(os.path.dirname(__file__), '..', 'test')
 os.makedirs(out_dir, exist_ok=True)
 out_pcap = os.path.abspath(os.path.join(out_dir, 'tcp_avg_rtt_test.pcap'))
 
+
+# Config retransmission
+ADD_RETRANSMISSION = True
+RETRANS_DELAY = 0.020
+
 # Addresses and ports
 mac_a = b'\x02\x00\x00\x00\x00\x01'
 mac_b = b'\x02\x00\x00\x00\x00\x02'
@@ -28,7 +33,10 @@ dport = 80
 
 # timestamps
 t0 = 0.0
-times = [t0, t0 + 0.001, t0 + 0.002, t0 + 0.010, t0 + 0.030]
+times = [t0, t0+0.001, t0+0.002, t0+0.010]
+if ADD_RETRANSMISSION:
+    times.append(t0 + 0.010 + RETRANS_DELAY)
+times.append(t0 + 0.030)
 
 payload = b'Hello'
 
@@ -101,6 +109,13 @@ if have_scapy:
     p4 = Ether(src=mac_a_str, dst=mac_b_str)/IP(src=ip_a, dst=ip_b)/TCP(sport=sport, dport=dport, flags='PA', seq=1001, ack=2001)/payload
     p4.time = times[3]
     packets.append(p4)
+    
+    if ADD_RETRANSMISSION:
+        # Duplicate packet p4
+        p4r = p4.copy()
+        p4r.time = times[4]
+        packets.append(p4r)
+
     p5 = Ether(src=mac_b_str, dst=mac_a_str)/IP(src=ip_b, dst=ip_a)/TCP(sport=dport, dport=sport, flags='A', seq=2001, ack=1006)
     p5.time = times[4]
     packets.append(p5)
@@ -120,6 +135,10 @@ else:
     frames.append(build_ether(ip_a, ip_b, mac_a, mac_b, sport, dport, 1001, 2001, 0x10, b''))
     # PSH+ACK data
     frames.append(build_ether(ip_a, ip_b, mac_a, mac_b, sport, dport, 1001, 2001, 0x18, payload))
+    
+    if ADD_RETRANSMISSION:
+        frames.append(build_ether(ip_a, ip_b, mac_a, mac_b, sport, dport, 1001, 2001, 0x18, payload))
+        
     # ACK for data
     frames.append(build_ether(ip_b, ip_a, mac_b, mac_a, dport, sport, 2001, 1006, 0x10, b''))
 

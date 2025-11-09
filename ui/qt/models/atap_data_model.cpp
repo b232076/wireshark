@@ -681,6 +681,8 @@ QVariant ConversationDataModel::headerData(int section, Qt::Orientation orientat
                 return tr("Flows"); break;
             case CONV_TCP_EXT_COLUMN_RTT:
                 return tr("Avg RTT (ms)"); break;
+            case CONV_TCP_EXT_COLUMN_RETRANS:
+                return tr("Retransmissions"); break;
             }
         }
     } else if (role == Qt::TextAlignmentRole) {
@@ -874,21 +876,37 @@ QVariant ConversationDataModel::data(const QModelIndex &idx, int role) const
                 }
                 break;
                 }
+            case CONV_TCP_EXT_COLUMN_RETRANS: 
+                {
+                    qlonglong retrans = (qlonglong)conv_item->ext_tcp.retransmissions;
+                    if (role == Qt::DisplayRole)
+                        return QString::number(retrans);
+                    else
+                        return QVariant(retrans);
+                    break;
+                }
             }
+            
         }
     } else if (role == Qt::ToolTipRole) {
         if (idx.column() == CONV_COLUMN_START || idx.column() == CONV_COLUMN_DURATION)
             return QObject::tr("Bars show the relative timeline for each conversation.");
         if (tap() == "tcp" && idx.column() == CONV_TCP_EXT_COLUMN_RTT) {
+            QString tooltip;
             if (conv_item->ext_tcp.rtt_count > 0) {
                 double avg_sec = nstime_to_sec(&conv_item->ext_tcp.rtt_sum) / (double)conv_item->ext_tcp.rtt_count;
                 double avg_ms = avg_sec * 1000.0;
                 double median_ms = nstime_to_sec(&conv_item->ext_tcp.rtt_median) * 1000.0;
-                return QString::fromLatin1("Avg: %1 ms\nMedian: %2 ms\nSamples: %3")
+                tooltip = QString::fromLatin1("Avg: %1 ms\nMedian: %2 ms\nSamples: %3")
                     .arg(QString::number(avg_ms, 'f', 3))
                     .arg(QString::number(median_ms, 'f', 3))
                     .arg((quint64)conv_item->ext_tcp.rtt_count);
             }
+            if (conv_item->ext_tcp.retransmissions > 0) {
+                tooltip += QString::fromLatin1("\nRetransmissions: %1")
+                .arg(conv_item->ext_tcp.retransmissions);
+            }
+            return tooltip;
         }
     } else if (role == Qt::TextAlignmentRole) {
         if (idx.column() == CONV_COLUMN_SRC_ADDR || idx.column() == CONV_COLUMN_DST_ADDR)

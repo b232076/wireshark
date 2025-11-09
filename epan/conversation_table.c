@@ -39,7 +39,7 @@
  * aggregating RTT samples.
  */
 struct _tcp_acked_counters {
-    uint64_t retrans;
+    uint64_t retrans;      /* number of retransmitted segments */
     uint64_t ooo;
     GArray *samples;       /* array of nstime_t samples */
     nstime_t rtt_median;   /* median sample */
