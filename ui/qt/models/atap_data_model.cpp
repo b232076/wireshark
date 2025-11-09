@@ -683,6 +683,8 @@ QVariant ConversationDataModel::headerData(int section, Qt::Orientation orientat
                 return tr("Avg RTT (ms)"); break;
             case CONV_TCP_EXT_COLUMN_RETRANS:
                 return tr("Retransmissions"); break;
+            case CONV_TCP_EXT_COLUMN_LOSSES_PER_SECOND:
+                return tr("Losses/s"); break;
             }
         }
     } else if (role == Qt::TextAlignmentRole) {
@@ -705,11 +707,14 @@ QVariant ConversationDataModel::data(const QModelIndex &idx, int role) const
     conv_item_t *conv_item = (conv_item_t *)&g_array_index(storage_, conv_item_t,idx.row());
 
     double duration = nstime_to_sec(&conv_item->stop_time) - nstime_to_sec(&conv_item->start_time);
-    double bps_ab = 0, bps_ba = 0;
+    double bps_ab = 0, bps_ba = 0, lps = 0;
     bool bpsCalculated = false;
+    bool lpsCalculated = false;
     if (duration > min_bw_calc_duration_) {
         bps_ab = conv_item->tx_bytes * 8 / duration;
         bps_ba = conv_item->rx_bytes * 8 / duration;
+        lps = conv_item->ext_tcp.retransmissions / duration;
+        lpsCalculated = true;
         bpsCalculated = true;
     }
 
@@ -879,10 +884,21 @@ QVariant ConversationDataModel::data(const QModelIndex &idx, int role) const
             case CONV_TCP_EXT_COLUMN_RETRANS: 
                 {
                     qlonglong retrans = (qlonglong)conv_item->ext_tcp.retransmissions;
+
                     if (role == Qt::DisplayRole)
                         return QString::number(retrans);
                     else
                         return QVariant(retrans);
+                    break;
+                }
+            case CONV_TCP_EXT_COLUMN_LOSSES_PER_SECOND:
+                {
+                    if (!lpsCalculated)
+                        break;
+                    if (role == Qt::DisplayRole)
+                        return QString::number(lps, 'f', 3);
+                    else
+                        return QVariant(lps);
                     break;
                 }
             }
@@ -905,6 +921,12 @@ QVariant ConversationDataModel::data(const QModelIndex &idx, int role) const
             if (conv_item->ext_tcp.retransmissions > 0) {
                 tooltip += QString::fromLatin1("\nRetransmissions: %1")
                 .arg(conv_item->ext_tcp.retransmissions);
+                
+                double duration_sec = nstime_to_sec(&conv_item->stop_time) - nstime_to_sec(&conv_item->start_time);
+                if (duration_sec > 0.0) {
+                    tooltip += QString::fromLatin1("\nLosses/sec: %1")
+                        .arg(QString::number(lps, 'f', 6));
+                }
             }
             return tooltip;
         }
