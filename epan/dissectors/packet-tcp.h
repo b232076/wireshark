@@ -479,6 +479,14 @@ struct tcp_analysis {
 	 */
 	nstime_t	ts_prev;
 
+	/* Number of out-of-order segments detected for this conversation.
+	 * Incremented by the TCP dissector when TCP_A_OUT_OF_ORDER is set
+	 * on a tcp_acked entry. Stored here so higher-level code (e.g. the
+	 * conversation tap) can read a reliable aggregate without scanning
+	 * packet-level structures.
+	 */
+	uint64_t    ooo_count;
+
 	/* Keep track of tcp stream numbers instead of using the conversation
 	 * index (as how it was done before). This prevents gaps in the
 	 * stream index numbering

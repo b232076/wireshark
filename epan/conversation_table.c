@@ -916,7 +916,11 @@ add_conversation_table_data_extended(
                     counters.samples = g_array_new(FALSE, FALSE, sizeof(nstime_t));
                     wmem_tree_foreach(tcpd->acked_table, count_tcp_acked_flags_cb, &counters);
                     ext_tcp.retransmissions = counters.retrans;
-                    ext_tcp.out_of_order = counters.ooo;
+                    /* It is incremented when TCP_A_OUT_OF_ORDER is set on a
+                     * tcp_acked entry. This avoids double-counting and is
+                     * authoritative for OOO events. 
+                     */
+                    ext_tcp.out_of_order = tcpd->ooo_count;
                     if (counters.samples->len > 0) {
                         /* compute sum and count from samples */
                         nstime_t sum = {0,0};
@@ -955,6 +959,14 @@ add_conversation_table_data_extended(
                         }
                     }
                     g_array_free(counters.samples, TRUE);
+                }
+
+                /* Include out-of-order segments from forward and reverse directions */
+                if (tcpd->fwd && tcpd->fwd->ooo_segments) {
+                    ext_tcp.out_of_order += (uint64_t)wmem_list_count(tcpd->fwd->ooo_segments);
+                }
+                if (tcpd->rev && tcpd->rev->ooo_segments) {
+                    ext_tcp.out_of_order += (uint64_t)wmem_list_count(tcpd->rev->ooo_segments);
                 }
 
                 /* Fallback to ts_first_rtt if no acked_table RTT samples were

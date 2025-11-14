@@ -1,0 +1,6 @@
+frame.number,ip.src,ip.dst,tcp.srcport,tcp.dstport,tcp.seq,tcp.len,tcp.flags,tcp.analysis.retransmission,tcp.analysis.out_of_order,tcp.analysis.ack_rtt
+1,192.0.2.1,192.0.2.2,12345,80,0,0,0x0002,,,
+2,192.0.2.2,192.0.2.1,80,12345,0,0,0x0012,,,0.001000000
+3,192.0.2.1,192.0.2.2,12345,80,1,0,0x0010,,,0.001000000
+4,192.0.2.1,192.0.2.2,12345,80,2000,5,0x0018,,,
+5,192.0.2.1,192.0.2.2,12345,80,1,5,0x0018,1,,

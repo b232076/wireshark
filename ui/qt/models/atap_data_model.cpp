@@ -680,9 +680,11 @@ QVariant ConversationDataModel::headerData(int section, Qt::Orientation orientat
             case CONV_TCP_EXT_COLUMN_A:
                 return tr("Flows"); break;
             case CONV_TCP_EXT_COLUMN_RTT:
-                return tr("Avg RTT (ms)"); break;
+                return tr("Median RTT (ms)"); break;
             case CONV_TCP_EXT_COLUMN_RETRANS:
                 return tr("Retransmissions"); break;
+            case CONV_TCP_EXT_COLUMN_OUT_OF_ORDER:
+                return tr("Out-of-order"); break;
             case CONV_TCP_EXT_COLUMN_LOSSES_PER_SECOND:
                 return tr("Losses/s"); break;
             }
@@ -891,6 +893,16 @@ QVariant ConversationDataModel::data(const QModelIndex &idx, int role) const
                         return QVariant(retrans);
                     break;
                 }
+            case CONV_TCP_EXT_COLUMN_OUT_OF_ORDER:
+                {
+                    qlonglong ooo = (qlonglong)conv_item->ext_tcp.out_of_order;
+
+                    if (role == Qt::DisplayRole)
+                        return QString::number(ooo);
+                    else
+                        return QVariant(ooo);
+                    break;
+                }
             case CONV_TCP_EXT_COLUMN_LOSSES_PER_SECOND:
                 {
                     if (!lpsCalculated)
@@ -928,6 +940,10 @@ QVariant ConversationDataModel::data(const QModelIndex &idx, int role) const
                         .arg(QString::number(lps, 'f', 6));
                 }
             }
+                if (conv_item->ext_tcp.out_of_order > 0) {
+                    tooltip += QString::fromLatin1("\nOut-of-order: %1")
+                        .arg(conv_item->ext_tcp.out_of_order);
+                }
             return tooltip;
         }
     } else if (role == Qt::TextAlignmentRole) {

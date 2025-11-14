@@ -3013,7 +3013,11 @@ finished_fwd:
                                 tcp_analyze_get_acked_struct(pinfo->num, seq, ack, true, tcpd);
                             }
 
-                            tcpd->ta->flags|=TCP_A_OUT_OF_ORDER;
+                            if (!(tcpd->ta->flags & TCP_A_OUT_OF_ORDER)) {
+                                g_warning("tcp: marking OOO (frame %u seq=%u seglen=%u nextseq=%u)", pinfo->num, (guint)seq, (guint)seglen, (guint)tcpd->fwd->tcp_analyze_seq_info->nextseq);
+                                tcpd->ta->flags |= TCP_A_OUT_OF_ORDER;
+                                tcpd->ooo_count++;
+                            }
                             goto finished_checking_retransmission_type;
                         }
                         else {
@@ -3024,7 +3028,11 @@ finished_fwd:
                                     tcp_analyze_get_acked_struct(pinfo->num, seq, ack, true, tcpd);
                                 }
 
-                                tcpd->ta->flags|=TCP_A_OUT_OF_ORDER;
+                                if (!(tcpd->ta->flags & TCP_A_OUT_OF_ORDER)) {
+                                 g_warning("tcp: marking OOO (frame %u seq=%u seglen=%u lastacklen=%u)", pinfo->num, (guint)seq, (guint)seglen, (guint)tcpd->fwd->tcp_analyze_seq_info->lastacklen);
+                                 tcpd->ta->flags |= TCP_A_OUT_OF_ORDER;
+                                 tcpd->ooo_count++;
+                                }
                                 goto finished_checking_retransmission_type;
                             }
                         }
@@ -3038,6 +3046,7 @@ finished_fwd:
             tcp_analyze_get_acked_struct(pinfo->num, seq, ack, true, tcpd);
         }
         tcpd->ta->flags|=TCP_A_RETRANSMISSION;
+        g_warning("tcp: marking RETRANSMISSION (frame %u seq=%u seglen=%u)", pinfo->num, (guint)seq, (guint)seglen);
 
         /*
          * worst case scenario: if we don't have better than a recent packet,
@@ -3093,7 +3102,11 @@ finished_checking_retransmission_type:
                 break;
 
             case 1:
-                tcpd->ta->flags|=TCP_A_OUT_OF_ORDER;
+                if (!(tcpd->ta->flags & TCP_A_OUT_OF_ORDER)) {
+                    g_warning("tcp: manual override -> OOO (frame %u seq=%u seglen=%u)", pinfo->num, (guint)seq, (guint)seglen);
+                    tcpd->ta->flags |= TCP_A_OUT_OF_ORDER;
+                    tcpd->ooo_count++;
+                }
                 break;
 
             case 2:
@@ -5100,7 +5113,8 @@ again:
             /* We only enter here if dissect_tcp set can_desegment,
              * which means that these bytes exist. */
             fd->data = tvb_memdup(wmem_file_scope(), tvb, offset, fd->len);
-            wmem_list_append_sorted(tcpd->fwd->ooo_segments, fd, compare_ooo_segment_item);
+                wmem_list_append_sorted(tcpd->fwd->ooo_segments, fd, compare_ooo_segment_item);
+
         }
         ipfd_head = NULL;
     } else {
