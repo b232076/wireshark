@@ -16,6 +16,11 @@ Resumo de métricas TCP: contagem de retransmissões, RTT médio (mediana), perd
 - `epan/conversation_table.c` — leitura/agregação dos acked entries e incremento do contador de retransmissões.
 - `ui/qt/models/atap_data_model.*` — mapeamento da coluna de retransmissões para a UI..
 
+## Perdas por segundo
+- A métrica é estimada a partir da contagem de retransmissões gravadas no campo de extensão, interpretadas como o número de perdas da sessão;
+- Caso a duração da transmissão seja significativa, evitando instabilidade numérica, a métrica é calculada pela razão entre o número de perdas e a duração da conexão;
+-  `ui/qt/models/atap_data_model.*` - calcula a métrica através do valor gravado de retransmissões e apresenta na coluna correspondente.
+
 ## RTT (Avg RTT / mediana)
 - As amostras são recolhidas de RTT associadas a ACKs em `tcp_analysis->acked_table` e a soma, contagem e mediana são calculadas.
 - Armazenamos agregados em `conv_extension_tcp_t` e expusemos na UI (coluna estendida mostrada como mediana em ms com contagem de amostras no conteúdo/tooltip).
